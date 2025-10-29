@@ -5,7 +5,7 @@ int B = 0;
 int C = 0;
 
 int source_expression(int a, int b, int c) {
-	return (!a || b) && !(a || b) && (!a || c);
+	return (!b || a) && !(a || b) && (!a || c);
 }
 
 int simple_expression(int a, int b, int c) {	
@@ -26,7 +26,7 @@ void print_truth_table(int (*func)(int, int, int)) {
 }
 
 int main() {
-	printf("Truth table for\nres = (!A->B) && !(A||B) && (!A||C):\n");
+	printf("Truth table for\nres = (B->A) && !(A||B) && (A->C):\n");
 	print_truth_table(source_expression);
 
 	printf("Truth table for\nres = !(A || B):\n");
