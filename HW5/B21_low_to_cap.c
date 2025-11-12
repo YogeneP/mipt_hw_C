@@ -6,7 +6,7 @@
 char s[MAX_LENGTH];
 const uint8_t Aa = 'a' - 'A';
 int main() {
-	fgets(s, 100, stdin);
+	fgets(s, MAX_LENGTH, stdin);
 
 	for (uint8_t i = 0; i < MAX_LENGTH; i++) {
 		if (s[i] >= 'A' && s[i] <= 'Z') 
