@@ -24,51 +24,55 @@ static const char letter_codes[] = {
 	['y'-'a'] = 0, ['z' - 'a'] = 2
 };   
 
+int get_letter_code(char* c);
+
 int main() {
 
 	FILE* fi;
 	FILE* fo;
-	if( !(fi = fopen("input.txt", "rt")) && !(fo = fopen("output.txt", "wt")) ) {
+	if( !(fi = fopen("input.txt", "rt")) || !(fo = fopen("output.txt", "wt")) ) {
 		printf("Cant't open file");
 		return 1;
 	}
 	
-	unsigned char c = fgetc(fi);
-	if (c > 'a' && c < 'z') fputc(c, fo);
-	else if (c > 'A' && c < 'Z') fputc((c-('A'-'a')), fo);
-	else return -1;
+	char str[5] = {0};
+	char c = fgetc(fi);
+	if (get_letter_code(&c) >= 0) str[0] = c;
+//	printf("%s\n", str);
 
 	int i = 1;
-	while ((c = fgetc(fi)) != EOF && (c != '\0') && (c != '\n') && (i < 4)) {
-		if(c >'a' && c < 'z') { 
-			fputc(('0' + letter_codes[c - 'a']), fo);
+	char code = 0;
+	while (((c = fgetc(fi)) != EOF) && (c != '\n') && (i < 4)) {
+//		printf("%c; code = %d\n", c, code = get_letter_code(&c));
+		if( ((code = get_letter_code(&c)) > 0) && (code + '0' != str[i-1]) ) {
+			str[i] = code + '0';
 			i++;
-			break;
-		}
-		if(c >'A' && c < 'Z') { 
-			fputc(('0' + letter_codes[c - 'A']), fo);
-			i++;
-			break;
 		}
 	}
 		
 	while (i < 4) {
-		fputc('0', fo);
+		str[i] = '0';
 		i++;
 	}
-	
+
+	fprintf(fo, "%s", str);
 	fclose(fi);
 	fclose(fo);
-
-/*	fo = fopen("output.txt", "rt");
+/*
+	fo = fopen("output.txt", "rt");
 	char buffer[500];
 	while(fgets(buffer,500,fo)) {
 		printf("%s", buffer);
 	}
 	fclose(fo);
-*/ }
+ */
+	return 0;
+}
 	
-	
-	
+int get_letter_code(char *c) {
+	if (*c >= 'A' && *c <= 'Z') *c -= ('A'-'a');
+	if (*c >= 'a' && *c <= 'z') return letter_codes[*c - 'a'];	
+	return -1;
+}	
 	
 	
