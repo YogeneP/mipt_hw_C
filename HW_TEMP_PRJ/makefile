@@ -12,7 +12,7 @@ CFLAGS = -Wall -Wextra -std=c99
 .PHONY: all clean
 
 all : main.o temp_api.o
-	$(CC) -o temp_log$(EXT) $^
+	$(CC) -o run$(EXT) $^
 
 main.o : main.c temp_api.h
 	$(CC) $(CFLAGS) -c $< -o $@ 
@@ -21,4 +21,4 @@ temp_api.o : temp_api.c temp_api.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean : 
-	$(RM) temp_log$(EXT) *.o
+	$(RM) run$(EXT) *.o

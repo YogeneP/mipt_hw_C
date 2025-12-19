@@ -5,14 +5,16 @@
 #include "temp_api.h"
 
 #define SIZEOF(TLOG) TLOG[0].year
+//max data string length, e.g.: 2025,11,12,14,23,-1 (19 + \n + \0)
+#define BUF_SIZE 21 
 
 int8_t validate_timedate(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute);
-int compare_items(const void * i1, const void * i2 );
+int compare_entrys(const void * i1, const void * i2 );
 
-int8_t add_item(Temp_log t_log[], uint16_t y, uint8_t m, uint8_t d, uint8_t h, uint8_t mn, int8_t t) {
+int8_t add_entry(Temp_log t_log[], uint16_t y, uint8_t m, uint8_t d, uint8_t h, uint8_t mn, int8_t t) {
     if (t_log == NULL) return 1;
 
-    // metadata validation (t_log[0].year - items count, the rest - full with bit 1):
+    // metadata validation (t_log[0].year - entrys count, the rest - full with bit 1):
     if (t_log[0].month != 255 || 
         t_log[0].day != 255 ||
         t_log[0].hour != 255 ||
@@ -36,14 +38,14 @@ int8_t add_item(Temp_log t_log[], uint16_t y, uint8_t m, uint8_t d, uint8_t h, u
     return 0;
 }
 
-int8_t delete_item(Temp_log t_log[], uint16_t index) {
+int8_t delete_entry(Temp_log t_log[], uint16_t index) {
     if(index < 1 || index > t_log[0].year) return 1;
     memmove(&t_log[index], &t_log[index+1], sizeof(Temp_log)*(t_log[0].year-(index+1)));
     t_log[0].year--;
     return 0;
 } 
 
-uint16_t create_log(Temp_log t_log[]) {
+uint16_t create_log(Temp_log t_log[], FILE* data) {
     //metadata initializing
     t_log[0].year = 0;
     t_log[0].month = 255;
@@ -52,28 +54,22 @@ uint16_t create_log(Temp_log t_log[]) {
     t_log[0].minute = 255;
     t_log[0].temperature = -1;
 
-    uint16_t i = 0;
-    if (add_item(t_log, 2024, 12, 3, 9, 0, -5) == 0) i++;
-    if (add_item(t_log, 2025, 1, 1, 8, 0, -10) == 0) i++;
-    if (add_item(t_log, 2025, 2, 10, 8, 0, -15) == 0) i++;
-    if (add_item(t_log, 2025, 3, 5, 8, 30, -2) == 0) i++;
-    if (add_item(t_log, 2025, 4, 2, 7, 50, 5) == 0) i++;
-    if (add_item(t_log, 2025, 3, 6, 8, 0, 5) == 0) i++;
-    if (add_item(t_log, 2025, 5, 1, 8, 10, 10) == 0) i++;
-    if (add_item(t_log, 2025, 6, 1, 8, 0, 13) == 0) i++;
-    if (add_item(t_log, 2025, 3, 10, 9, 0, 3) == 0) i++;
-    if (add_item(t_log, 2025, 7, 1, 8, 0, 13) == 0) i++;
-    if (add_item(t_log, 2025, 3, 12, 8, 20, 7) == 0) i++;
-    if (add_item(t_log, 2025, 8, 1, 8, 0, 16) == 0) i++;
-    if (add_item(t_log, 2025, 9, 1, 8, 0, 13) == 0) i++;
-    return i;
+    char buf[20] = {'0'};
+    uint16_t i = 1;
+    while (fgets(buf, BUF_SIZE, data)) {
+        sscanf(buf, "%" SCNu16 ",%" SCNu8 ",%" SCNu8 ",%" SCNu8 ",%" SCNu8 ",%" SCNd8, 
+            &t_log[i].year, &t_log[i].month, &t_log[i].day, &t_log[i].hour, &t_log[i].minute, &t_log[i].temperature);
+        i++;
+        t_log[0].year++;
+    }
+    return i-1;
 }
 
 void print_log(Temp_log t_log[]) {
     printf("****************************\n");
     printf("|    Date, time    | Temp. |\n");
     printf("****************************\n");
-    for (uint16_t i = 1; i < t_log[0].year; i++) { //t_log[0].year - metadata, items count
+    for (uint16_t i = 1; i < t_log[0].year; i++) { //t_log[0].year - metadata, entrys count
         printf("| %04u-%02u-%02u %02u:%02u |  %02d  |\n", 
             t_log[i].year, t_log[i].month, t_log[i].day, t_log[i].hour, t_log[i].minute, t_log[i].temperature);
     }
@@ -119,7 +115,7 @@ void print_year_stats(Temp_log* t_log, uint16_t year) {
 }
 
 void sort_log (Temp_log* t_log) {
-    qsort((void*)(t_log + 1), t_log[0].year, sizeof(Temp_log), compare_items);
+    qsort((void*)(t_log + 1), t_log[0].year, sizeof(Temp_log), compare_entrys); //t_log[0].year - entrys count metadata
 }
 
 int8_t validate_timedate(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute) {
@@ -144,7 +140,7 @@ int8_t validate_timedate(uint16_t year, uint8_t month, uint8_t day, uint8_t hour
     return 0;
 }
 
-int compare_items(const void * i1, const void * i2 ) {
+int compare_entrys(const void * i1, const void * i2 ) {
     if (((Temp_log*)i1)->year != ((Temp_log*)i2)->year) { return ((Temp_log*)i1)->year - ((Temp_log*)i2)->year; }
     if (((Temp_log*)i1)->month != ((Temp_log*)i2)->month) { return ((Temp_log*)i1)->month - ((Temp_log*)i2)->month; }
     if (((Temp_log*)i1)->day != ((Temp_log*)i2)->day) { return ((Temp_log*)i1)->day - ((Temp_log*)i2)->day; }
