@@ -6,6 +6,7 @@
 
 #define SIZEOF(TLOG) TLOG[0].year
 
+
 //max data string length, e.g.: 2025,11,12,14,23,-1 (19 + \n + \0):
 #define BUF_SIZE 21 
 
@@ -42,7 +43,7 @@ int8_t add_entry(Temp_log t_log[], int32_t y, int32_t m, int32_t d, int32_t h, i
 
     if (t_log[0].year >= LOG_LEN-1) return 3;
     if (validate_timedate(y, m, d, h, mn)) return 2;
-    if (t < -99 || t > 99) return 4;
+    if (t < MIN_TEMP || t > MAX_TEMP) return 4;
     
     t_log[0].year++;
     int index = t_log[0].year;
@@ -59,12 +60,12 @@ int8_t add_entry(Temp_log t_log[], int32_t y, int32_t m, int32_t d, int32_t h, i
 
 int8_t delete_entry(Temp_log t_log[], uint16_t index) {
     if(index < 1 || index > t_log[0].year) return 1;
-    if(index < t_log[0].year) memmove(&t_log[index], &t_log[index+1], sizeof(Temp_log)*(t_log[0].year-(index+1)));
+    if(index < t_log[0].year) memmove(&t_log[index], &t_log[index+1], sizeof(Temp_log)*(t_log[0].year-index));
     t_log[0].year--;
     return 0;
 } 
 
-uint16_t create_log(Temp_log t_log[], FILE* data) {
+uint16_t read_log(Temp_log t_log[], FILE* data) {
     //metadata initializing
     t_log[0].year = 0;
     t_log[0].month = 255;
@@ -87,7 +88,7 @@ uint16_t create_log(Temp_log t_log[], FILE* data) {
         if(sscanf(buf, "%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32, 
                 &y, &m, &d, &h, &mn, &t) == 6 ) {
             if(validate_timedate(y, m, d, h, mn) == 0) {
-                if(t < 100 && t > -100) {
+                if(t <= MAX_TEMP && t >= MIN_TEMP) {
                     if(i < LOG_LEN-1) {
                         t_log[i].year = (uint16_t)y;
                         t_log[i].month = (uint8_t)m;
@@ -108,6 +109,10 @@ uint16_t create_log(Temp_log t_log[], FILE* data) {
 }
 
 void print_log(Temp_log t_log[]) {
+    if(t_log[0].year == 0) { 
+        printf("No data to display\n");
+        return;
+    }  
     printf("********************************\n");
     printf("| # |    Date, time    | Temp. |\n");
     printf("********************************\n");
@@ -122,7 +127,7 @@ void print_log(Temp_log t_log[]) {
 int8_t get_month_average_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
     uint16_t count = 0;
     float mid = .0;
-    for (uint16_t i = 1; i < t_log[0].year; i++) {
+    for (uint16_t i = 1; i <= t_log[0].year; i++) {
         if (t_log[i].year == year && t_log[i].month == month) {
             count++;
             mid = (mid * ((count == 1) ? 1 : count - 1) + (float)t_log[i].temperature)/(float)count;   
@@ -134,7 +139,7 @@ int8_t get_month_average_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
 
 int8_t get_month_min_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
     int8_t min = INT8_MAX;
-    for (uint16_t i = 1; i < t_log[0].year; i++) {
+    for (uint16_t i = 1; i <= t_log[0].year; i++) {
         if (t_log[i].year == year && t_log[i].month == month) {
             min = t_log[i].temperature < min ? t_log[i].temperature : min;   
         }
@@ -144,7 +149,7 @@ int8_t get_month_min_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
 
 int8_t get_month_max_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
     int8_t max = INT8_MIN;
-    for (uint16_t i = 1; i < t_log[0].year; i++) {
+    for (uint16_t i = 1; i <= t_log[0].year; i++) {
         if (t_log[i].year == year && t_log[i].month == month) {
             max = t_log[i].temperature > max ? t_log[i].temperature : max;   
         }
@@ -152,12 +157,12 @@ int8_t get_month_max_temp(Temp_log* t_log, uint16_t year, uint8_t month) {
     return max;
 }
 
-int print_month_stats(Temp_log* t_log, uint16_t year, uint8_t month) {
+int print_month_stats(Temp_log* t_log, int32_t year, int32_t month) {
     if(!t_log) return -1;
     if(validate_year(year)) return 1;
     if(validate_month(month)) return 2;
 
-    int8_t mid_t = get_month_average_temp(t_log,year,month);
+    int8_t mid_t = get_month_average_temp(t_log, (uint16_t)year, (uint8_t)month);
     if (mid_t != INT8_MIN) {
         printf("Year %"PRIu16" %s statistics: \n", year, month_name[month]);
         printf("Average temperature: %"PRId8"\n", mid_t);
@@ -168,7 +173,7 @@ int print_month_stats(Temp_log* t_log, uint16_t year, uint8_t month) {
     return 3;
 }
 
-int print_year_stats(Temp_log* t_log, uint16_t year) {
+int print_year_stats(Temp_log* t_log, int32_t year) {
     if(!t_log) return -1;
     if(validate_year(year)) return 1;
 
@@ -178,25 +183,33 @@ int print_year_stats(Temp_log* t_log, uint16_t year) {
     uint8_t count = 0;
     int res = 0;
 
-    for (int m = 1; m <= 12; m++) {
-        res = get_month_average_temp(t_log,year,m);
+    for (uint8_t m = 1; m <= 12; m++) {
+        res = get_month_average_temp(t_log,(uint16_t)year,m);
         if(res != INT8_MIN) { 
             count++;
             mid_t = (mid_t * ((count == 1) ? 1 : count - 1) + (float)res)/(float)count;
-            res = get_month_max_temp(t_log,year,m);
+            res = get_month_max_temp(t_log, (uint16_t)year, m);
             max_t = res > max_t ? res : max_t;
-            res = get_month_min_temp(t_log, year, m);
+            res = get_month_min_temp(t_log, (uint16_t)year, m);
             min_t = res < min_t ? res : min_t;
         }
     }
     if (count) {
-        printf("Year %"PRIu16" statistics: \n", year);
+        printf("Year %"PRIu16" statistics: \n", (uint16_t)year);
         printf("Average temperature: %"PRId8"\n", (int8_t)mid_t);
         printf("Lowest temperature: %"PRId8"\n", min_t);
         printf("Highest temperature: %"PRId8"\n", max_t);
         return 0;
     }
     return 3;
+}
+
+int print_entry(Temp_log* t_log, uint8_t index) {
+    if(!t_log) return -1;
+    if(index < 1 || index > t_log[0].year) return 1;
+    printf("%"PRIu16",%"PRIu8",%"PRIu8",%"PRIu8",%"PRIu8",%"PRId8"\n", 
+        t_log[index].year, t_log[index].month, t_log[index].day, t_log[index].hour, t_log[index].minute, t_log[index].temperature);
+    return 0;
 }
 
 void sort_log (Temp_log* t_log) {
