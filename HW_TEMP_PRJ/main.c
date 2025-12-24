@@ -4,7 +4,7 @@
 
 #define ENTRY_FIELDS_COUNT 6
 #define CURR_YEAR t_struct->tm_year + 1900;
-#define CURR_MONTH t_struct->tm_mon+1;
+#define CURR_MONTH t_struct->tm_mon + 1;
 #define CURR_DAY t_struct->tm_mday;
 #define CURR_HOUR t_struct->tm_hour;
 #define CURR_MINUTE t_struct->tm_min;
