@@ -64,15 +64,18 @@ int8_t delete_entry(Temp_log t_log[], uint16_t index) {
     t_log[0].year--;
     return 0;
 } 
+/*
+    returns a count of the faulty lines in data-file
+*/
+int16_t read_log(Temp_log** t_log, uint32_t* capacity, FILE* data) {
 
-uint16_t read_log(Temp_log t_log[], FILE* data) {
     //metadata initializing
-    t_log[0].year = 0;
-    t_log[0].month = 255;
-    t_log[0].day = 255;
-    t_log[0].hour = 255;
-    t_log[0].minute = 255;
-    t_log[0].temperature = -1;
+    (*t_log)[0].year = 0;
+    (*t_log)[0].month = 255;
+    (*t_log)[0].day = 255;
+    (*t_log)[0].hour = 255;
+    (*t_log)[0].minute = 255;
+    (*t_log)[0].temperature = -1;
 
     int32_t y = 0;
     int32_t m = 0;
@@ -85,17 +88,23 @@ uint16_t read_log(Temp_log t_log[], FILE* data) {
     uint16_t i = 1;
     uint16_t err_count = 0;
     while (fgets(buf, BUF_SIZE, data)) {
+        if(i >= *capacity) {
+            (*capacity) *= 2;
+            Temp_log* temp = realloc(*t_log,(*capacity)*sizeof(Temp_log));
+            if(temp == NULL) { return -1; }
+            *t_log = temp;
+        }
         if(sscanf(buf, "%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32",%"SCNd32, 
                 &y, &m, &d, &h, &mn, &t) == 6 ) {
             if(validate_timedate(y, m, d, h, mn) == 0) {
                 if(t <= MAX_TEMP && t >= MIN_TEMP) {
                     if(i < LOG_LEN-1) {
-                        t_log[i].year = (uint16_t)y;
-                        t_log[i].month = (uint8_t)m;
-                        t_log[i].day = (uint8_t)d;
-                        t_log[i].hour = (uint8_t)h;
-                        t_log[i].minute = (uint8_t)mn;
-                        t_log[i].temperature = (int8_t)t;
+                        (*t_log)[i].year = (uint16_t)y;
+                        (*t_log)[i].month = (uint8_t)m;
+                        (*t_log)[i].day = (uint8_t)d;
+                        (*t_log)[i].hour = (uint8_t)h;
+                        (*t_log)[i].minute = (uint8_t)mn;
+                        (*t_log)[i].temperature = (int8_t)t;
                         i++;
                         continue;
                     }
@@ -104,7 +113,7 @@ uint16_t read_log(Temp_log t_log[], FILE* data) {
         }
         err_count++;
     }
-    t_log[0].year = i-1;
+    (*t_log)[0].year = i-1;
     return err_count;
 }
 

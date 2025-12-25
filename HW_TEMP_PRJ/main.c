@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <stdlib.h>
 #include "temp_api.h"
 
 #define ENTRY_FIELDS_COUNT 6
@@ -17,9 +18,10 @@
 #define D if(0) 
 #endif
 
-Temp_log temp_log[LOG_LEN];
+Temp_log* temp_log = NULL;
 
 void print_help(void);
+void cleanup(void);
 
 int main(int argc, char** argv) {
     FILE* csv = NULL;
@@ -41,6 +43,10 @@ int main(int argc, char** argv) {
     int res = 0;
     int i = 0;
 
+    if (atexit(cleanup) != 0) {
+      printf("Memory management error, aborting...\n");
+      return -5;
+   }
 // ***** Args and parameters parsing ******
     while(i < argc-1) {
         i++;
@@ -138,8 +144,17 @@ int main(int argc, char** argv) {
         printf("Data file %s is missing, will be created if -a specified.\n", filename);
     }
 
+    uint32_t capacity = 2;
+    if((temp_log = malloc(capacity*sizeof(Temp_log))) == NULL) {
+        printf("Memory allocation error. Aborting...\n");
+        return -2;
+    }
     printf("Reading data from \"%s\"...", filename); 
-    uint16_t err_count = read_log(temp_log, csv);
+    int32_t err_count = read_log(&temp_log, &capacity, csv); //no need to get the data size: initial size is 0, new size will be written to temp_log[0] metadata;
+    if(err_count < 0)  {
+        printf("Memory allocation error. Aborting...\n");
+        exit(-2);
+    }
     fclose(csv);
     if(temp_log[0].year) printf(" done:\n\t%"PRIu16" entries read, %"PRIu16" invalid lines ignored\n", temp_log[0].year, err_count); 
     else printf(" no data found.\n");
@@ -148,7 +163,7 @@ int main(int argc, char** argv) {
     if (raw_data[0]) {
         if (raw_data[0] == 1) {
             printf("Failed to add an entry: invalid input, run -h for help\n");
-            return 1;
+            exit(1);
         } else {
             if ((res = add_entry(temp_log, raw_data[0], raw_data[1], raw_data[2], raw_data[3], raw_data[4], raw_data[5]))) { 
                 printf("Failed to create a record: ");
@@ -163,17 +178,17 @@ int main(int argc, char** argv) {
                         printf("temperature out of range (%d*C...%d*C expected)\n", MIN_TEMP, MAX_TEMP);
                         break;      
                 };
-                return 1;
+                exit(1);
             }
             printf("Entry added: ");
             print_entry(temp_log, temp_log[0].year);
         }
     }
     if(raw_index_del > 0) {
-        if ((res = delete_entry(temp_log,raw_index_del))) {
+        if (delete_entry(temp_log,raw_index_del)) {
             printf("Unable to delete an entry: index out of range\n");
             printf("All changes cancelled if any. Data file is not modified");
-            return 2;
+            exit(2);
         }
         printf("Entry #%"PRIu16" deleted\n", raw_index_del);
     } 
@@ -187,7 +202,7 @@ int main(int argc, char** argv) {
     if(raw_index_del || sort_needed) { // if delete or sort performed - rewrite the file
         if ((csv = fopen(filename, "w")) == NULL) {
             printf("File write error. Exiting...");
-            return 3;
+            exit(3);
         }
         for (uint16_t i = 1; i <= temp_log[0].year; i++) {
             fprintf(csv, "%"SCNu16",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNd8,
@@ -199,7 +214,7 @@ int main(int argc, char** argv) {
         if (raw_data[0] > 999) {
             if ((csv = fopen(filename, "a")) == NULL) {
                 printf("File write error. Exiting...");
-                return 3;
+                exit(3);
             }
             fprintf(csv, "\n%"SCNu16",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNd8,
                 (uint16_t)raw_data[0], (uint8_t)raw_data[1], (uint8_t)raw_data[2], (uint8_t)raw_data[3], 
@@ -212,7 +227,7 @@ int main(int argc, char** argv) {
     if (stat_month == 0) {
         if (stat_year == 0) {
             print_log(temp_log);
-            return 0;
+            exit(0);
         }
         if(stat_year == 1) { 
             stat_year = CURR_YEAR; 
@@ -227,7 +242,7 @@ int main(int argc, char** argv) {
                     break;
             }
         } 
-        return 0;
+        exit(0);
     }
 
     if (stat_year == 0) { //if no YYYY specified assume current year
@@ -247,9 +262,9 @@ int main(int argc, char** argv) {
                 printf("No data for %"PRIu16", %s", stat_year, month_name[stat_month]);
                 break;
         }
-        return 0;
+        exit(0);
     }
-    return 0;
+    exit(0);
 }
 
 void print_help(void) {
@@ -265,4 +280,10 @@ void print_help(void) {
     printf("\t-a <temperature>: add record to the database with current date/time.\n");
     printf("\t-d <index>: delete record from database by index (#).\n");
     printf("\t-s: sort database by date/time, ascending.\n\n");
+}
+
+void cleanup(void) {
+    if(temp_log) {
+        free(temp_log);
+    }
 }
