@@ -181,8 +181,8 @@ int print_month_stats(Temp_log* t_log, int32_t year, int32_t month) {
     if (mid_t != INT8_MIN) {
         printf("Year %"PRIu16" %s statistics: \n", year, month_name[month]);
         printf("Average temperature: %"PRId8"\n", mid_t);
-        printf("Highest temperature: %"PRId8"\n", get_month_max_temp(t_log,year,month));
         printf("Lowest temperature: %"PRId8"\n", get_month_min_temp(t_log,year,month));
+        printf("Highest temperature: %"PRId8"\n", get_month_max_temp(t_log,year,month));
         return 0;
     }
     return 3;
