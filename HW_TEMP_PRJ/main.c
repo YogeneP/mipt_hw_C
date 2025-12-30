@@ -4,13 +4,15 @@
 #include "temp_api.h"
 
 #define ENTRY_FIELDS_COUNT 6
+#define MAX_ERR_LINES 10
+
 #define CURR_YEAR t_struct->tm_year + 1900;
 #define CURR_MONTH t_struct->tm_mon + 1;
 #define CURR_DAY t_struct->tm_mday;
 #define CURR_HOUR t_struct->tm_hour;
 #define CURR_MINUTE t_struct->tm_min;
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG 
 #define D if(1) 
@@ -29,6 +31,8 @@ int main(int argc, char** argv) {
     char* filename = &zero;
 
     uint8_t sort_needed = 0;
+    uint32_t print_start = 0;
+    uint32_t print_length = 0;
 
     int32_t raw_data[ENTRY_FIELDS_COUNT] = { 0 };
     raw_data[5] = MAX_TEMP + 1;
@@ -41,7 +45,7 @@ int main(int argc, char** argv) {
     int32_t stat_year = 0;
 
     int res = 0;
-    int i = 0;
+    uint8_t i = 0;
 
     if (atexit(cleanup) != 0) {
       printf("Memory management error, aborting...\n");
@@ -69,6 +73,20 @@ int main(int argc, char** argv) {
                         continue;
                     }
                     break;
+                case 'p': //print database: optional argument, optional parameters [start] [length]
+                    i++;
+                    if(i > argc || sscanf(argv[i], "%"SCNd32, &print_start) != 1) {
+                        print_start = 1;
+                        print_length = 100;
+                        i--;
+                        continue;
+                    }
+                    i++;
+                    if(i > argc || sscanf(argv[i], "%"SCNd32, &print_length) != 1) {
+                        print_length = 100;
+                        i--;
+                    }
+                    continue;
                 case 'y':   // statistics year: optional argument, optional parameter
                     stat_year = 1;
                     if (i+1 < argc) {
@@ -81,15 +99,15 @@ int main(int argc, char** argv) {
                 case 'a': // add entry: optional argument, essential ENTRY_FIELDS_COUNT parameters
                     D printf("-a - processing\n");
                     i++;
-                    D printf("i = %u; argc-ENTRY_FIELDS_COUNT = %u\n", i, argc-ENTRY_FIELDS_COUNT);    
-                    int j = 0;
+                    D printf("i = %u; argc-ENTRY_FIELDS_COUNT = %u\n", i, argc-ENTRY_FIELDS_COUNT); 
+                    int j = 0;   
                     for (j = 0; j < ENTRY_FIELDS_COUNT; j++) {
                         if(i+j > argc || sscanf(argv[i+j], "%"SCNd32, &raw_data[j]) != 1) {
                             D printf("Parameter %u(%u): %s read error\n",j,j+i,argv[i+j]);
                             if(j == 1) { // special condition: if the first parameter read successfully, trying to assume it as temperature
                                 D printf("But j = %u, checking value: %d....",j,raw_data[0]);
                                 if(raw_data[0] >= MIN_TEMP && raw_data[0] <= MAX_TEMP ) {
-                                    D printf("looks like a temperature, processing\n");
+                                    D printf("looks like a temperature value, processing\n");
                                     raw_data[5] = raw_data[0];
                                     raw_data[0] = CURR_YEAR;
                                     raw_data[1] = CURR_MONTH;
@@ -149,22 +167,32 @@ int main(int argc, char** argv) {
         printf("Memory allocation error. Aborting...\n");
         return -2;
     }
-    printf("Reading data from \"%s\"...", filename); 
-    int32_t err_count = read_log(&temp_log, &capacity, csv); //no need to get the data size: initial size is 0, new size will be written to temp_log[0] metadata;
+
+    printf("Reading data from \"%s\"...\n", filename);
+    int32_t err_count = read_log(&temp_log, &capacity, csv); //no need to get the data size: initial size is 0, new size will be written to temp_log[0].data.entries_count metadata;
     if(err_count < 0)  {
-        printf("Memory allocation error. Aborting...\n");
+        printf("\nMemory allocation error. Aborting...\n");
         exit(-2);
     }
     fclose(csv);
-    if(temp_log[0].year) printf(" done:\n\t%"PRIu16" entries read, %"PRIu16" invalid lines ignored\n", temp_log[0].year, err_count); 
+    if(temp_log[0].data.entries_count) printf("Done:\n\t%"PRIu16" entries read, %"PRIu16" invalid lines ignored\n", temp_log[0].data.entries_count, err_count); 
     else printf(" no data found.\n");
 
-    // ******* Database memory update section *******
+// ******* Database memory update section *******
     if (raw_data[0]) {
         if (raw_data[0] == 1) {
             printf("Failed to add an entry: invalid input, run -h for help\n");
             exit(1);
         } else {
+            if (temp_log[0].data.entries_count >= capacity - 1) {
+                capacity *= 2;
+                Temp_log* ptr = realloc(temp_log, capacity*sizeof(Temp_log));
+                if(ptr == NULL) {
+                    printf("Failed to add an entry: memory allocation error. Aborting...\n");
+                    exit(-2);
+                }
+                temp_log = ptr;
+            }
             if ((res = add_entry(temp_log, raw_data[0], raw_data[1], raw_data[2], raw_data[3], raw_data[4], raw_data[5]))) { 
                 printf("Failed to create a record: ");
                 switch (res) {
@@ -180,8 +208,8 @@ int main(int argc, char** argv) {
                 };
                 exit(1);
             }
-            printf("Entry added: ");
-            print_entry(temp_log, temp_log[0].year);
+            printf("Entry #%u added: ", temp_log[0].data.entries_count);
+            print_entry(temp_log, temp_log[0].data.entries_count);
         }
     }
     if(raw_index_del > 0) {
@@ -190,7 +218,7 @@ int main(int argc, char** argv) {
             printf("All changes cancelled if any. Data file is not modified");
             exit(2);
         }
-        printf("Entry #%"PRIu16" deleted\n", raw_index_del);
+        printf("Entry #%"PRIu32" deleted\n", raw_index_del);
     } 
 
     if (sort_needed) {
@@ -204,10 +232,10 @@ int main(int argc, char** argv) {
             printf("File write error. Exiting...");
             exit(3);
         }
-        for (uint16_t i = 1; i <= temp_log[0].year; i++) {
-            fprintf(csv, "%"SCNu16",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNd8,
-                temp_log[i].year, temp_log[i].month, temp_log[i].day, temp_log[i].hour, temp_log[i].minute, temp_log[i].temperature);
-            if (i < temp_log[0].year) fprintf(csv, "\n");
+        for (uint32_t i = 1; i <= temp_log[0].data.entries_count; i++) {
+            fprintf(csv, "%"SCNu16";%"SCNu8";%"SCNu8";%"SCNu8";%"SCNu8";%"SCNd8,
+                temp_log[i].data.date.year, temp_log[i].data.date.month, temp_log[i].data.date.day, temp_log[i].hour, temp_log[i].minute, temp_log[i].temperature);
+            if (i < temp_log[0].data.entries_count) fprintf(csv, "\n");
         }
         fclose(csv);
     } else { // if only add entry triggered - just write a new entry to the end
@@ -216,17 +244,18 @@ int main(int argc, char** argv) {
                 printf("File write error. Exiting...");
                 exit(3);
             }
-            fprintf(csv, "\n%"SCNu16",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNu8",%"SCNd8,
+            fprintf(csv, "\n%"SCNu16";%"SCNu8";%"SCNu8";%"SCNu8";%"SCNu8";%"SCNd8,
                 (uint16_t)raw_data[0], (uint8_t)raw_data[1], (uint8_t)raw_data[2], (uint8_t)raw_data[3], 
                 (uint8_t)raw_data[4], (int8_t)raw_data[5]);
             fclose(csv);
         }
     }
-
-// ******* Display stats *******
+    // ******* Display stats *******
+    if(print_start) {
+        print_log(temp_log, print_start, print_length);
+    }    
     if (stat_month == 0) {
         if (stat_year == 0) {
-            print_log(temp_log);
             exit(0);
         }
         if(stat_year == 1) { 
@@ -274,12 +303,12 @@ void print_help(void) {
     printf("Statistics:\n");
     printf("\t-y <YYYY>: print statistics for year YYYY. Current year is assumed if a value not specified.\n");
     printf("\t-m <MM>: print statistics for month MM. Current year is assumed if -y <year> not specified.\n");
-    printf("If no -m and -y specified the full database will be printed.\n");
     printf("\nDatabase management:\n");
-    printf("\t-a <YYYY>,<MM>,<DD>,<HH>,<mm>,<temperature>: add record to the database.\n");
-    printf("\t-a <temperature>: add record to the database with current date/time.\n");
-    printf("\t-d <index>: delete record from database by index (#).\n");
-    printf("\t-s: sort database by date/time, ascending.\n\n");
+    printf("\t-p [start] [length]: print database fragment [length] entries long starting from [start]\n");
+    printf("\t-a <YYYY>,<MM>,<DD>,<HH>,<mm>,<temperature>: add record to the database file end.\n");
+    printf("\t-a <temperature>: add record to the database with current date/time to the database file end.\n");
+    printf("\t-d <index>: delete record from database by index (#), rewrites the file, deletes inconsistent data\n");
+    printf("\t-s: sort database by date/time, ascending. Rewrites the file, deletes inconsistent data.\n\n");
 }
 
 void cleanup(void) {
