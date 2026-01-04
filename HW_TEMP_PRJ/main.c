@@ -4,13 +4,12 @@
 #include "temp_api.h"
 
 #define ENTRY_FIELDS_COUNT 6
-#define MAX_ERR_LINES 10
 
-#define CURR_YEAR t_struct->tm_year + 1900;
-#define CURR_MONTH t_struct->tm_mon + 1;
-#define CURR_DAY t_struct->tm_mday;
-#define CURR_HOUR t_struct->tm_hour;
-#define CURR_MINUTE t_struct->tm_min;
+#define CURR_YEAR t_struct->tm_year + 1900
+#define CURR_MONTH t_struct->tm_mon + 1
+#define CURR_DAY t_struct->tm_mday
+#define CURR_HOUR t_struct->tm_hour
+#define CURR_MINUTE t_struct->tm_min
 
 // #define DEBUG
 
@@ -64,6 +63,15 @@ int main(int argc, char** argv) {
                         continue;
                     }
                     break;
+                case 'y':   // statistics year: optional argument, optional parameter
+                    stat_year = 255; 
+                    if (i+1 < argc) {
+                        if ((sscanf(argv[i+1], "%"SCNd32, &stat_year)) == 1) {
+                            i++;
+                        }
+                        continue;
+                    }
+                    break;
                 case 'm':   // statistic month: optional argument, optional parameter
                     stat_month = 255;
                     if (i+1 < argc) {                      
@@ -77,7 +85,7 @@ int main(int argc, char** argv) {
                     i++;
                     if(i > argc || sscanf(argv[i], "%"SCNd32, &print_start) != 1) {
                         print_start = 1;
-                        print_length = 100;
+                        print_length = 50;
                         i--;
                         continue;
                     }
@@ -87,15 +95,6 @@ int main(int argc, char** argv) {
                         i--;
                     }
                     continue;
-                case 'y':   // statistics year: optional argument, optional parameter
-                    stat_year = 1;
-                    if (i+1 < argc) {
-                        if ((sscanf(argv[i+1], "%"SCNd32, &stat_year)) == 1) {
-                            i++;
-                        }
-                        continue;
-                    }
-                    break;
                 case 'a': // add entry: optional argument, essential ENTRY_FIELDS_COUNT parameters
                     D printf("-a - processing\n");
                     i++;
@@ -175,7 +174,12 @@ int main(int argc, char** argv) {
         exit(-2);
     }
     fclose(csv);
-    if(temp_log[0].data.entries_count) printf("Done:\n\t%"PRIu16" entries read, %"PRIu16" invalid lines ignored\n", temp_log[0].data.entries_count, err_count); 
+    if(temp_log[0].data.entries_count) {
+        if (err_count > MAX_ERR_PRINT) {
+            printf("... and %" PRIu32 " more.\n", err_count - MAX_ERR_PRINT);
+        }
+        printf("Done:\n\t%"PRIu32" entries read, %"PRIu32" invalid lines ignored\n", temp_log[0].data.entries_count, err_count); 
+    }    
     else printf(" no data found.\n");
 
 // ******* Database memory update section *******
@@ -208,11 +212,15 @@ int main(int argc, char** argv) {
                 };
                 exit(1);
             }
+            if (stat_year == 0 || stat_year == 255) { stat_year = raw_data[0]; }
+            if (stat_month == 0) { stat_month = raw_data[1]; }
             printf("Entry #%u added: ", temp_log[0].data.entries_count);
             print_entry(temp_log, temp_log[0].data.entries_count);
         }
     }
     if(raw_index_del > 0) {
+        if (stat_year == 0 || stat_year == 255) { stat_year = temp_log[raw_index_del].data.date.year; }
+        if (stat_month == 0) { stat_month = temp_log[raw_index_del].data.date.month; }
         if (delete_entry(temp_log,raw_index_del)) {
             printf("Unable to delete an entry: index out of range\n");
             printf("All changes cancelled if any. Data file is not modified");
@@ -238,7 +246,7 @@ int main(int argc, char** argv) {
             if (i < temp_log[0].data.entries_count) fprintf(csv, "\n");
         }
         fclose(csv);
-    } else { // if only add entry triggered - just write a new entry to the end
+    } else { // if only add entry triggered - just writing a new entry to the end
         if (raw_data[0] > 999) {
             if ((csv = fopen(filename, "a")) == NULL) {
                 printf("File write error. Exiting...");
@@ -254,58 +262,68 @@ int main(int argc, char** argv) {
     if(print_start) {
         print_log(temp_log, print_start, print_length);
     }    
-    if (stat_month == 0) {
-        if (stat_year == 0) {
-            exit(0);
+
+    /* 
+    * -- - year: last year in a datafile; 
+    * -m - year: last year in a datafile; month: every month of the year; 
+    * -m MM - month: month MM of the first year in a datafile;
+    * -y -m - year: current year; month: every month of the year
+    * -y -m MM - year: current year; month: month MM
+    * -y YYYY -m - year: year YYYY; month: every month of the year;
+    * -y YYYY -m MM - year: year YYYY; month: year YYYY month MM
+    * -y - year: current year
+    * -y YYYY - year: year YYYY 
+    */ 
+
+    if (stat_year == 0) { 
+        sort_log(temp_log);
+        stat_year = temp_log[temp_log[0].data.entries_count].data.date.year; }
+    else if (stat_year == 255) { stat_year = CURR_YEAR; }
+    printf("Statistics:\n");
+    if (stat_month) {
+        uint8_t m = stat_month;
+        uint8_t e = stat_month;
+        if (stat_month == 255) { 
+            m = 1;
+            e = 12;
         }
-        if(stat_year == 1) { 
-            stat_year = CURR_YEAR; 
-        }
-        if((res = print_year_stats(temp_log,stat_year))) {
-            switch (res) {
-                case 1:
-                    printf("Invalid year value");
-                    break;
-                case 3:
-                    printf("No data for year %"PRIu16, stat_year);
-                    break;
+        while (m <= e) {
+            res = print_month_stats(temp_log, stat_year, m);
+            if (res) {
+                switch (res) {
+                    case 1:
+                    case 2:
+                        printf("Invalid year/month value");
+                        exit(res);
+                        break;
+                    case 3:
+                        printf("***********************************\n");
+                        printf("\tNo data for %"PRIu16", %s\n", stat_year, month_name[m]);
+                        break;
+                }
             }
-        } 
-        exit(0);
-    }
-
-    if (stat_year == 0) { //if no YYYY specified assume current year
-        stat_year = CURR_YEAR;
-    }
-    if (stat_month == 255) { //if no YYYY specified assume current year
-        stat_month = CURR_MONTH;
-    }
-
-    if ((res = print_month_stats(temp_log, stat_year, stat_month))) {
-        switch (res) {
-            case 1:
-            case 2:
-                printf("Invalid year/month value");
-                break;
-            case 3:
-                printf("No data for %"PRIu16", %s", stat_year, month_name[stat_month]);
-                break;
+            m++;
         }
-        exit(0);
+    } 
+
+    res = print_year_stats(temp_log,stat_year);
+    if (res == 3) {
+        printf("No data for year %"PRIu16"\n", stat_year);
     }
+
     exit(0);
 }
 
 void print_help(void) {
     printf("CLI temperature log processing usage:\n");
-    printf("\t-f <filename>: temperature database CSV-file (no spaces); entry format: <YYYY>,<MM>,<DD>,<HH>,<MM>,<temperature>\n");
-    printf("\t\t If the file doesn't exist it will be created if data entry added with -a");
+    printf("\t-f <filename>: temperature database CSV-file; entry format: <YYYY>;<MM>;<DD>;<HH>;<MM>;<temperature>\n");
+    printf("\t\t If the file doesn't exist it will be created if data entry added with -a\n");
     printf("Statistics:\n");
-    printf("\t-y <YYYY>: print statistics for year YYYY. Current year is assumed if a value not specified.\n");
-    printf("\t-m <MM>: print statistics for month MM. Current year is assumed if -y <year> not specified.\n");
+    printf("\t-y [YYYY]: print statistics for year YYYY. Current year is assumed if a value not specified; \n\t\tlast year in the file is assumed if no argument specified\n");
+    printf("\t-m [MM]: print statistics for month MM. Every month statistics assumed if MM is not specified\n");
     printf("\nDatabase management:\n");
     printf("\t-p [start] [length]: print database fragment [length] entries long starting from [start]\n");
-    printf("\t-a <YYYY>,<MM>,<DD>,<HH>,<mm>,<temperature>: add record to the database file end.\n");
+    printf("\t-a <YYYY> <MM> <DD> <HH> <mm> <temperature>: add record to the database file end.\n");
     printf("\t-a <temperature>: add record to the database with current date/time to the database file end.\n");
     printf("\t-d <index>: delete record from database by index (#), rewrites the file, deletes inconsistent data\n");
     printf("\t-s: sort database by date/time, ascending. Rewrites the file, deletes inconsistent data.\n\n");

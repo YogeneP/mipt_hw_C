@@ -6,6 +6,8 @@
 #define MIN_TEMP (-99)
 #define MAX_TEMP (99)
 
+#define MAX_ERR_PRINT 20
+
 typedef struct Temp_log { // Temp_log[0].year is reserved for current database length
     union {
         uint32_t entries_count;

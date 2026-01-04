@@ -6,7 +6,7 @@
 
 #define SIZEOF(TLOG) TLOG[0].data.entries_count
 #define SEPARATOR "%*[;, \t]"
-// #define DEBUG
+#define DEBUG
 
 #ifdef DEBUG 
 #define D if(1) 
@@ -14,9 +14,7 @@
 #define D if(0) 
 #endif
 
-
-
-//max data string length, e.g.: 2025,11,12,14,23,-1 (19 + \n + \0)
+//max data string length 22, e.g.: 2025;11;12;14;23;-19 (20 + \n + \0)
 #define BUF_SIZE 50 
 
 char *month_name[13] = {
@@ -91,7 +89,9 @@ int16_t read_log(Temp_log** t_log, uint32_t* capacity, FILE* data) {
 
     char buf[BUF_SIZE] = {'0'};
     uint32_t i = 1;
+
     uint32_t err_count = 0;
+
     while (fgets(buf, BUF_SIZE, data)) {
         if(i >= *capacity) {
             (*capacity) *= 2;
@@ -115,7 +115,9 @@ int16_t read_log(Temp_log** t_log, uint32_t* capacity, FILE* data) {
             }
         }
         err_count++;
-        D printf("invalid line #%u: %s", i+err_count, buf); 
+        if (err_count <= MAX_ERR_PRINT) { //avoid console flooding in the case of massive errors
+            printf("invalid line #%u: %s", i+err_count, buf); 
+        } 
     }
     (*t_log)[0].data.entries_count = i-1;
     return err_count;
@@ -126,6 +128,7 @@ void print_log(Temp_log t_log[], uint32_t start, uint32_t length) {
         printf("No data to display\n");
         return;
     }  
+    printf("%" PRIu32 " entries beginning from #%" PRIu32 ":\n", length, start);
     printf("********************************\n");
     printf("| # |    Date, time    | Temp. |\n");
     printf("********************************\n");
@@ -179,7 +182,8 @@ int print_month_stats(Temp_log* t_log, int32_t year, int32_t month) {
 
     int8_t mid_t = get_month_average_temp(t_log, (uint16_t)year, (uint8_t)month);
     if (mid_t != INT8_MIN) {
-        printf("Year %"PRIu16" %s statistics: \n", year, month_name[month]);
+        printf("***********************************\n");
+        printf("%s, %" PRIu16 ": \n", month_name[month], year);
         printf("Average temperature: %"PRId8"\n", mid_t);
         printf("Lowest temperature: %"PRId8"\n", get_month_min_temp(t_log,year,month));
         printf("Highest temperature: %"PRId8"\n", get_month_max_temp(t_log,year,month));
@@ -210,7 +214,8 @@ int print_year_stats(Temp_log* t_log, int32_t year) {
         }
     }
     if (count) {
-        printf("Year %"PRIu16" statistics: \n", (uint16_t)year);
+        printf("***********************************\n");
+        printf("Year %"PRIu16": \n", (uint16_t)year);
         printf("Average temperature: %"PRId8"\n", (int8_t)mid_t);
         printf("Lowest temperature: %"PRId8"\n", min_t);
         printf("Highest temperature: %"PRId8"\n", max_t);
