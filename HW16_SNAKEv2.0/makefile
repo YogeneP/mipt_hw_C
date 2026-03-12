@@ -1,14 +1,27 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -lncurses -DNCURSES_STATIC
+CFLAGS = -Wall -Wextra -std=c99 -DNCURSES_STATIC -I/ucrt64/include
+LDFLAGS = -static
+LIBS = -lncurses
 
-#gcc -Wall -static -o snake.exe snake.c -lncurses -DNCURSES_STATIC
-.PHONY: 		all clean
+ifdef MESS
+	CFLAGS += -DMESS
+	TARGET_SUFFIX := _mess
+endif
 
-all:		snake20.o
-			$(CC) -o snake20.exe $^ $(CFLAGS)
+ifdef DEBUG
+	CFLAGS += -DDEBUG
+	TARGET_SUFFIX := $(TARGET_SUFFIX)_debug
+endif
 
-snake20.o:	snake20.c
-			$(CC) $(CFLAGS) -c $^ -o $@
+.PHONY: all clean
 
-clean:		
-			del -Q *.exe *.o
+all: snake20$(TARGET_SUFFIX).exe
+
+snake20$(TARGET_SUFFIX).exe: snake20$(TARGET_SUFFIX).o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+snake20$(TARGET_SUFFIX).o: snake20.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	del *.exe *.o 2>nul || exit 0
