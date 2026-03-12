@@ -179,7 +179,7 @@ void initSnake(snake_t *head, size_t size, int x, int y, int dir, control_button
         tail[i].x = x + (2 - head->direction) * i;
         tail[i].y = y;
     }
-    head->tail = tail; // прикрепляем к голове хвост
+    head->tail = tail; 
     head->tsize = size;
     head->to_grow = 0;
     head->controls = controls;
@@ -423,7 +423,7 @@ int main(void)
         initSnake(snake[i], START_TAIL_SIZE, SNAKE_START_X(i), SNAKE_START_Y(i), (1 + 2 * (i & 1)), snake_controls[i%2]);
     } 
 
-    mvprintw(0, 0,"'F10' for EXIT to Main menu");
+    mvprintw(0, 1,"'F10' for EXIT to Main menu");
     timeout(150);
     initFood(wild_food, 0, MAX_FOOD_SIZE-1);
     initFood(salvage_food, 0, salvage_food_size-1);
