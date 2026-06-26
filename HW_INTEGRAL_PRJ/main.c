@@ -19,6 +19,7 @@
 #define SET_ITERATIONS_TASK task_flags |= 4;
 #define SET_POINTS_TASK task_flags |= 8;
 #define R_INIT_SIZE 10
+#define R_MAX_SIZE 1024
 
 typedef struct { 
     int f_num;
@@ -43,6 +44,7 @@ float f1(float x);
 float f2(float x);
 float f3(float x);
 float fx2(float x);
+int storeIntersectionPoint(rpoint_t* r_points_arr, int r_i, float (*f[])(float), int fi, int gi, float a, float b, float e);
 float getIntersectionX(float(*f)(float), float(*g)(float), float a, float b, float eps1);
 float getIntegral(float(*f)(float), float a, float b, float eps2);
 float ifnparse(int argc, char** argv, int *i);
@@ -50,7 +52,9 @@ float fparse(int argc, char** argv, int *i);
 int parseParameters(int ac, char** av, int index, int parse_f2, params_t params);
 void checkParam(float param, char argn);
 void fswap(float* a, float* b);
+void swap(int* a, int* b);
 void print_help(void);
+int comp_points(const void* vp1, const void* vp2);
 void cleanup(void);
 
 int main(int argc, char** argv) {
@@ -125,53 +129,62 @@ int main(int argc, char** argv) {
     // Fill the points array with intersection ponts (incl f(x) = 0)) in negative and positive ranges.
     // Next sort them
     // Proceed from left to right
-        for (int fi1 = 1; fi1 < MAX_F_NUM-1; fi1++) {
+    for (int fi1 = 1; fi1 < MAX_F_NUM-1; fi1++) {
         for (int fi2 = fi1 + 1; fi2 < MAX_F_NUM; fi2++) {
-            if ((p_num + 2) > r_points_size)  { 
-                r_points_size = 2 * r_points_size;
+            if ((p_num + 2) > r_points_size)  {
+                r_points_size = 2 * r_points_size; 
+                if(r_points_size > R_MAX_SIZE) {
+                    printf("Maximal points number exceeded!");
+                    exit(1);
+                }
                 realloc(r_points, sizeof(rpoint_t) * r_points_size); 
             }
-            storeIntersectionPoint(r_points, f, fi1, fi2, NEGATIVE_R_LIMIT, 0, epsr); 
-            p_num = storeIntersectionPoint(r_points, f, fi1, fi2, 0, POSITIVE_R_LIMIT, epsr);
+            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, NEGATIVE_R_LIMIT, 0, epsr); 
+            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, POSITIVE_R_LIMIT, epsr);
         }
     }
 
-    qsort(r_points, p_num, sizeof(rpoint_t), comp_points);
-    char f_comb[][2] = {
-        {1,3},
-        {1,2},
-        {3,2}
-    }; 
-    float area_total = 0.0;
-    int fi = 0;
-    int gi = 0;
-    for(int p_i = 0; p_i < p_num - 1; p_i++) {
-//GO HERE!!!
+    if(p_num < 2) {
+        printf("Too few intersection points to form a shape found!");
+        exit(0);
+    }
 
-        if(r_points[p_i].f_num )
+    qsort(r_points, p_num, sizeof(rpoint_t), comp_points);
+
+    float area_total = 0.0;
+    int fi = r_points[0].f_num; //must be top border of the shape segment 
+    int gi = r_points[0].g_num; //must be bottom border of the shape segment
+    for(int p_i = 0; p_i < p_num - 1; p_i++) {
+        if(fi == r_points[p_i].f_num && gi == r_points[p_i].f_num) { //if top border crosses bottom border => end of shape
+            printf("End of shape reached with internal crossing detected."); //means end of shape, but more intersection points left on the right o_O
+            break;
+        }
+
+        float x_mid = (r_points[p_i].x + r_points[p_i+1].x)/2;
+        if(f[fi](x_mid) < f[gi](x_mid)) swap(&fi,&gi); //ensure f[fi]() is int hte top, f[gi]() - in the bottom  
         float a1 = getIntegral(f[r_points[p_i].f_num], r_points[p_i].x, r_points[p_i+1].x, epsi);
         float a2 = getIntegral(f[r_points[p_i].g_num], r_points[p_i].x, r_points[p_i+1].x, epsi);
         area_total += abs(a1-a2);
 
+        if(fi > gi) swap(&fi, &gi); //in r_points f_num < g_num; arranging to avoid to compare every of fi and gi with every of f_num, g_num 
+        if(fi == r_points[p_i+1].f_num) fi = r_points[p_i+1].g_num;
+        if(gi == r_points[p_i+1].g_num) gi = r_points[p_i+1].f_num;
     }
 
-    float inter = getIntersectionX(fx2, f0, 0, 10, 0.0001);
-    //    float integral = getIntegral(f2, a, b, 0.001);
-        printf("f(x) = %f | g(x) = %f -> x = %f\n", fx2(inter), f0(inter), inter);
-    //    printf("integral f(%f|%f) = %f\n", a, b, integral);
-        exit(0);
+    printf("The area of a shape is: %f", area_total);
+
+    exit(0);
 }
 
-unsigned int storeIntersectionPoint(rpoint_t* r_points_arr, float (*f[])(float), int fi, int gi, float a, float b, float e) {
-    static unsigned int r_i = 0;
+int storeIntersectionPoint(rpoint_t* r_points_arr, int r_i, float (*f[])(float), int fi, int gi, float a, float b, float e) {
     r_points_arr[r_i].x = getIntersectionX(f[fi], f[gi], a, b, e);
     if (r_points_arr[r_i].x < FLT_MAX) {
-        r_points_arr[r_i].f_num = fi;
+        r_points_arr[r_i].f_num = fi; 
         r_points_arr[r_i].f_num = gi;
         r_points_arr[r_i].y = f[fi](r_points_arr[r_i].x);
-        r_i++;
+        return 1;
     }
-    return r_i - 1;     
+    return 0;
 }
 
 float f0(float x) {
@@ -248,7 +261,7 @@ float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, f
     float fgx = FLT_MAX;
     while (fabs(x_prev - x) > eps1) {
         fgx = f(x) - g(x); 
-        printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
+//        printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
         if(fgx == .0) {
             printf("fgx = 0, match");
             break;
@@ -262,8 +275,8 @@ float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, f
             D fga = fgx;
         }
         x = (a+b) / 2;
-
     }
+    printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
     return x;
 }
 
@@ -303,6 +316,12 @@ float getIntegral(float(*f)(float), float a, float b, float eps2) {
 
 void fswap(float* a, float* b) {
     float t = *a;
+    *a = *b;
+    *b = t;
+}
+
+void swap(int* a, int* b) {
+    int t = *a;
     *a = *b;
     *b = t;
 }
