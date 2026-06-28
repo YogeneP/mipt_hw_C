@@ -3,7 +3,7 @@
 #include <math.h>
 #include <float.h>
 
-#define D  
+#define DEBUG  
 #define INV_ARG_QUIT do { print_help(); exit(0); } while(0); 
 #define EPSI_DEF 0.0001
 #define EPSR_DEF 0.0001
@@ -18,8 +18,8 @@
 #define SET_INTERSECTION_TASK task_flags |= 2;
 #define SET_ITERATIONS_TASK task_flags |= 4;
 #define SET_POINTS_TASK task_flags |= 8;
-#define R_INIT_SIZE 10
-#define R_MAX_SIZE 1024
+#define R_INIT_SIZE 2
+#define R_MAX_SIZE 255
 
 typedef struct { 
     int f_num;
@@ -38,6 +38,15 @@ typedef struct {
 
 rpoint_t* r_points;
 size_t r_points_size;
+
+/*
+task_flags bits assignment:
+0: single integral calculation
+1: single intersection point calculation
+2: print iteration steps
+3: print intersection points
+*/
+unsigned short int task_flags;
 
 float f0(float x);
 float f1(float x);
@@ -69,7 +78,7 @@ int main(int argc, char** argv) {
         "3/x",
         "x^3"
     };
-    params_t params = {INT_MAX,INT_MAX,FLT_MAX,FLT_MAX,FLT_MAX}; 
+    params_t params = {__INT16_MAX__,__INT16_MAX__,FLT_MAX,FLT_MAX,FLT_MAX}; 
 
     unsigned int task_flags = 0; //
     float epsi = EPSI_DEF;
@@ -80,8 +89,10 @@ int main(int argc, char** argv) {
 
     while(i < argc) {
         if (argv[i][0] == '-') {
-            D printf("Argument processing: %s\n", argv[i]);
-            switch ((argv[i])[1]) {
+            #ifdef DEBUG
+                printf("Argument processing: %s\n", argv[i]);
+            #endif
+            switch (argv[i][1]) {
                 case 'a':   // set left range limit
                     params.a = fparse(argc,argv,&i);
                     checkParam(params.a, 'a');
@@ -115,11 +126,12 @@ int main(int argc, char** argv) {
                     SET_INTERSECTION_TASK;
                     break;
                 default:
+                    printf("Invalid key: -%c", argv[i][1]);                    
                     INV_ARG_QUIT;
             } 
         i++;
         }
-        INV_ARG_QUIT;
+//        INV_ARG_QUIT;
     }
 
     r_points_size = R_INIT_SIZE;
@@ -129,49 +141,84 @@ int main(int argc, char** argv) {
     // Fill the points array with intersection ponts (incl f(x) = 0)) in negative and positive ranges.
     // Next sort them
     // Proceed from left to right
+    if (GET_INTERSECTION_TASK) printf("*** Intersections search ***\n");
     for (int fi1 = 1; fi1 < MAX_F_NUM-1; fi1++) {
         for (int fi2 = fi1 + 1; fi2 < MAX_F_NUM; fi2++) {
             if ((p_num + 2) > r_points_size)  {
                 r_points_size = 2 * r_points_size; 
                 if(r_points_size > R_MAX_SIZE) {
-                    printf("Maximal points number exceeded!");
+                    printf("Maximal intersection points count exceeded (%d)!\n", R_MAX_SIZE);
                     exit(1);
                 }
-                realloc(r_points, sizeof(rpoint_t) * r_points_size); 
+                void* temp_p;
+                if (
+                    temp_p = realloc(r_points, sizeof(rpoint_t) * r_points_size)
+                ) { 
+                    r_points = (rpoint_t*)temp_p;
+                } else {
+                    printf("Memory allocation error!\n");
+                    exit(-1);
+                } 
             }
-            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, NEGATIVE_R_LIMIT, 0, epsr); 
+            if (GET_INTERSECTION_TASK) {
+                printf("Intersection of ");
+                printf("f(x) = %s [%d]; g(x) = %s [%d] at", f_str[fi1], fi1, f_str[fi2], fi2);
+                printf("[%.2f, %.2f]: \n", (float)NEGATIVE_R_LIMIT, (float)0);
+            }
+            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, NEGATIVE_R_LIMIT, 0, epsr);
+            if (GET_INTERSECTION_TASK) {
+                printf("Intersection of ");
+                printf("f(x) = %s [%d]; g(x) = %s [%d] at", f_str[fi1], fi1, f_str[fi2], fi2);
+                printf("[%.2f, %.2f]: \n", (float)0, (float)POSITIVE_R_LIMIT);
+            }
             p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, POSITIVE_R_LIMIT, epsr);
         }
     }
 
     if(p_num < 2) {
         printf("Too few intersection points to form a shape found!");
-        exit(0);
+        exit(1);
     }
 
     qsort(r_points, p_num, sizeof(rpoint_t), comp_points);
+    printf("Intersection points found: %d", p_num);
 
+    printf("\n*** Area calculation ***\n");
     float area_total = 0.0;
     int fi = r_points[0].f_num; //must be top border of the shape segment 
     int gi = r_points[0].g_num; //must be bottom border of the shape segment
     for(int p_i = 0; p_i < p_num - 1; p_i++) {
-        if(fi == r_points[p_i].f_num && gi == r_points[p_i].f_num) { //if top border crosses bottom border => end of shape
-            printf("End of shape reached with internal crossing detected."); //means end of shape, but more intersection points left on the right o_O
+        if(GET_ITERATIONS_TASK) {
+            printf("Segment %d: \n", p_i);
+            printf("Top border: %s; bottom border: %s", f_str[fi], f_str[gi]);
+            printf("Limits: [%.2f; %.2f]", r_points[p_i].x, r_points[p_i+1].x);
+        }
+        #ifdef DEBUG 
+            printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
+        #endif
+        if(p_i > 0 && fi == r_points[p_i].f_num && gi == r_points[p_i].g_num) { //if top border crosses bottom border => end of shape
+            printf("End of shape reached with internal crossing detected.\n"); //means end of shape, but more intersection points left on the right o_O
             break;
         }
 
         float x_mid = (r_points[p_i].x + r_points[p_i+1].x)/2;
         if(f[fi](x_mid) < f[gi](x_mid)) swap(&fi,&gi); //ensure f[fi]() is int hte top, f[gi]() - in the bottom  
-        float a1 = getIntegral(f[r_points[p_i].f_num], r_points[p_i].x, r_points[p_i+1].x, epsi);
-        float a2 = getIntegral(f[r_points[p_i].g_num], r_points[p_i].x, r_points[p_i+1].x, epsi);
-        area_total += abs(a1-a2);
+        #ifdef DEBUG 
+            printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
+        #endif
+        float a1 = getIntegral(f[fi], r_points[p_i].x, r_points[p_i+1].x, epsi);
+        float a2 = getIntegral(f[gi], r_points[p_i].x, r_points[p_i+1].x, epsi);
+        float a = a1-a2;
+        area_total += a;
 
-        if(fi > gi) swap(&fi, &gi); //in r_points f_num < g_num; arranging to avoid to compare every of fi and gi with every of f_num, g_num 
+        if(fi > gi) swap(&fi, &gi); //in r_points f_num < g_num; arranging to avoid the comparison of every of fi and gi with every of f_num, g_num 
         if(fi == r_points[p_i+1].f_num) fi = r_points[p_i+1].g_num;
         if(gi == r_points[p_i+1].g_num) gi = r_points[p_i+1].f_num;
+        if(fi > gi) swap(&fi, &gi);
+        printf("Segment %d area: %f \n", p_i, a);
     }
 
-    printf("The area of a shape is: %f", area_total);
+    printf("Total area of the shape: %f \n", area_total);
 
     exit(0);
 }
@@ -180,7 +227,7 @@ int storeIntersectionPoint(rpoint_t* r_points_arr, int r_i, float (*f[])(float),
     r_points_arr[r_i].x = getIntersectionX(f[fi], f[gi], a, b, e);
     if (r_points_arr[r_i].x < FLT_MAX) {
         r_points_arr[r_i].f_num = fi; 
-        r_points_arr[r_i].f_num = gi;
+        r_points_arr[r_i].g_num = gi;
         r_points_arr[r_i].y = f[fi](r_points_arr[r_i].x);
         return 1;
     }
@@ -196,7 +243,7 @@ float f1(float x) {
 }
 
 float f2(float x) {
-    return pow(x-2,3) - 1;
+    return (x-2)*(x-2)*(x-2) - 1;
 }
 
 float f3(float x) {
@@ -205,6 +252,17 @@ float f3(float x) {
 
 float fx2(float x) {
     return x*x*x;
+}
+
+// safe calculation of function *f e.g. 1/x regarding break points
+// appr - calculation x approach
+// doesn't work with not defined f(x) (e.g. sqrt(x) at x<0) and with f(x) infinite on a range  
+float safe_f(float(*f)(float), float x, int appr) {
+    float fx = f(x);
+    if( !isinf(fx) || appr == 0) {
+        return fx;
+    }  
+    return appr > 0 ? FLT_MAX : -FLT_MAX;
 }
 
 float fparse(int argc, char** argv, int *i) {
@@ -243,25 +301,32 @@ void checkParam(float param, char argn) {
 }
 
 float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, float eps1) {
-    printf("Calculating intersection point in a range [%f, %f]; \n", a, b);
     if(a == b) return FLT_MAX;
     if(b < a) fswap(&a,&b);
-    float fga = f(a) - g(a);
-    float fgb = f(b) - g(b);
+    float fga = safe_f(f,a,1) - safe_f(g,a,1);
+    float fgb = safe_f(f,b,-1) - safe_f(g,b,-1);
     if (((fga > .0) && (fgb > .0)) || ((fga < .0) && (fgb < .0))) {
-        printf("no intersection or even intersections count in the range: \n f(a) - g(a) = %f - %f = %f\n f(b) - g(b) = %f - %f = %f\n", f(a), g(a), fga, f(b), g(b), fgb);
+        if (GET_ITERATIONS_TASK) {
+            printf("No intersection or even intersections count in the range: \n f(a) - g(a) = %f - %f = %f\n f(b) - g(b) = %f - %f = %f\n", f(a), g(a), fga, f(b), g(b), fgb);
+        }
         return FLT_MAX;
     }
     if (fga == .0) return a;
     if (fgb == .0) return b;
 
-    int i = 0;
+    #ifdef DEBUG
+        unsigned int i;
+    #endif
+
     float x = (a+b) / 2;
     float x_prev = FLT_MAX;
     float fgx = FLT_MAX;
     while (fabs(x_prev - x) > eps1) {
-        fgx = f(x) - g(x); 
-//        printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
+        float fx = f(x);
+        fgx = safe_f(f,x,-1) - safe_f(g,x,-1); 
+        #ifdef DEBUG
+            printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
+        #endif
         if(fgx == .0) {
             printf("fgx = 0, match");
             break;
@@ -269,14 +334,20 @@ float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, f
         x_prev = x;
         if((fgx > .0 && fga < .0) || (fgx < .0 && fga > .0)) {
             b = x;
-            D fgb = fgx;
+            #ifdef DEBUG
+                fgb = fgx;
+            #endif
         } else {
             a = x;
-            D fga = fgx;
+            #ifdef DEBUG
+                fga = fgx;
+            #endif
         }
         x = (a+b) / 2;
     }
-    printf("%d. a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", i++, a, b, x, fga, fgb, fgx);
+    #ifdef DEBUG
+        printf(" a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", a, b, x, fga, fgb, fgx);
+    #endif
     return x;
 }
 
@@ -296,15 +367,17 @@ float getIntegral(float(*f)(float), float a, float b, float eps2) {
         res = .0;
         while(x <= b) {
             res += step * f(x);
-//            printf("%d. step: %f; f(%f) = %f; res = %f\n", i, step, x, f(x), res);
+            #ifdef DEBUG 
+//                printf("%d. step: %f; f(%f) = %f; res = %f\n", i, step, x, f(x), res);
+            #endif
             x += step;
         }
-        printf("%d. step: %f; res = %f\n", i, step, res);
+        if(GET_ITERATIONS_TASK) printf("%d. step: %f; result: %f\n", i, step, res);
         i++;
         eps_prev = eps;
         eps = fabs(res_prev - res);
         if (eps > eps_prev) {
-            printf("critical accuracy for the implemented calculation methode reached: %f\n", eps_prev);
+            if(GET_ITERATIONS_TASK) printf("critical accuracy for the implemented calculation methode reached: %f\n", eps_prev);
             res = res_prev;
             break;
         }
@@ -343,10 +416,10 @@ int comp_points(const void* vp1, const void* vp2) {
     printf("\t-f: select first function to process with\n");
     printf("\t-g: select second function to process with\n");
     printf("\t-i: calculate integral f(x) on [a,b] range\n");
-    printf("\t-r: find intesection point of f(x) and g(x) located inside [a, b] range.");
+    printf("\t-r: find intesection point of f(x) and g(x) located inside [a, b] range.\n");
     printf("\t-a: set left border of calculation range\n");
     printf("\t-b: set right border of calculation range\n");
-    printf("\t-n: on every calculation print the count of iterations passed");
+    printf("\t-n: on every calculation print the count of iterations passed\n");
 }
 
 void cleanup(void) {
