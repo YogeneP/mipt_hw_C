@@ -3,7 +3,7 @@
 #include <math.h>
 #include <float.h>
 
-#define DEBUG  
+//#define DEBUG  
 #define INV_ARG_QUIT do { print_help(); exit(0); } while(0); 
 #define EPSI_DEF 0.0001
 #define EPSR_DEF 0.0001
@@ -20,14 +20,6 @@
 #define SET_POINTS_TASK task_flags |= 8;
 #define R_INIT_SIZE 2
 #define R_MAX_SIZE 255
-
-typedef struct { 
-    int f_num;
-    int g_num;
-    float a;
-    float b;
-    float eps;
-} params_t;
 
 typedef struct { 
     int f_num;
@@ -78,14 +70,14 @@ int main(int argc, char** argv) {
         "3/x",
         "x^3"
     };
-    params_t params = {__INT16_MAX__,__INT16_MAX__,FLT_MAX,FLT_MAX,FLT_MAX}; 
 
     unsigned int task_flags = 0; //
     float epsi = EPSI_DEF;
     float epsr = EPSR_DEF;
     float a = FLT_MAX;
     float b = FLT_MAX;
-    int fn = 0;
+    int f_num = 0;
+    int g_num = 0;
 
     while(i < argc) {
         if (argv[i][0] == '-') {
@@ -94,22 +86,22 @@ int main(int argc, char** argv) {
             #endif
             switch (argv[i][1]) {
                 case 'a':   // set left range limit
-                    params.a = fparse(argc,argv,&i);
-                    checkParam(params.a, 'a');
+                    a = fparse(argc,argv,&i);
+                    checkParam(a, 'a');
                     break;
                 case 'b':   // set right range limit 
-                    params.b = fparse(argc,argv,&i);
-                    checkParam(params.b, 'b');
+                    b = fparse(argc,argv,&i);
+                    checkParam(b, 'b');
                     break;
                 case 'f':   // select first f(x) option
                     float fn = ifnparse(argc,argv,&i);
                     checkParam(fn, 'f');
-                    params.f_num = (int)fn;
+                    f_num = (int)fn;
                     break;
                 case 'g':   // select second g(x) option
                     float gn = ifnparse(argc,argv,&i);
                     checkParam(fn, 'g');
-                    params.g_num = (int)fn;
+                    g_num = fn;
                     break;
                 case 'p':   // print all intersection points of complex shape area calculation
                     SET_POINTS_TASK;
@@ -132,6 +124,23 @@ int main(int argc, char** argv) {
         i++;
         }
 //        INV_ARG_QUIT;
+    }
+
+    if(GET_INTEGRAL_TASK) {
+        printf("Calculating integral value of f(x)=%s in the range of [%.4f,%.4f]. Accuracy: %f \n", f_str[f_num], a < b ? a : b, a < b ? b : a, epsi);
+        float res = getIntegral(f[f_num],a,b,epsi);
+        printf("Result: %f", res);
+    }
+
+    if(GET_INTERSECTION_TASK) {
+        printf("Searching of the intersection point of f(x)=%s and g(x)=%s in the range of [%.4f,%.4f]. Accuracy: %f \n", f_str[f_num], f_str[g_num], a, b, epsr);
+        float res = getIntersectionX(f[f_num],f[g_num],a,b,epsr);
+        printf("Result: %f", res);
+    }
+
+    /****  Shape area calculation ****/
+    if(a > 0 || b < 0) {
+        printf("The calculation proceeds in two ranges [a;0] and [0;b]. \n There must be a < 0 and b > 0.");
     }
 
     r_points_size = R_INIT_SIZE;
@@ -190,8 +199,8 @@ int main(int argc, char** argv) {
     for(int p_i = 0; p_i < p_num - 1; p_i++) {
         if(GET_ITERATIONS_TASK) {
             printf("Segment %d: \n", p_i);
-            printf("Top border: %s; bottom border: %s", f_str[fi], f_str[gi]);
-            printf("Limits: [%.2f; %.2f]", r_points[p_i].x, r_points[p_i+1].x);
+            printf("Top border: f(x)=%s; bottom border: g(x)=%s \n", f_str[fi], f_str[gi]);
+            printf("Limits: [%.2f; %.2f]\n", r_points[p_i].x, r_points[p_i+1].x);
         }
         #ifdef DEBUG 
             printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
@@ -215,10 +224,10 @@ int main(int argc, char** argv) {
         if(fi == r_points[p_i+1].f_num) fi = r_points[p_i+1].g_num;
         if(gi == r_points[p_i+1].g_num) gi = r_points[p_i+1].f_num;
         if(fi > gi) swap(&fi, &gi);
-        printf("Segment %d area: %f \n", p_i, a);
+        printf("Segment %d area: %f \n\n", p_i, a);
     }
 
-    printf("Total area of the shape: %f \n", area_total);
+    printf("Total area of the shape: %f \n\n", area_total);
 
     exit(0);
 }
@@ -273,7 +282,7 @@ float fparse(int argc, char** argv, int *i) {
     char* f_end_ch = 0;
     float n = strtof(argv[*i], &f_end_ch);
     if(f_end_ch == argv[*i]) { 
-        return FLT_MAX; 
+        return FLT_MIN; 
     }
     return n;
 }
@@ -281,16 +290,16 @@ float fparse(int argc, char** argv, int *i) {
 float ifnparse(int argc, char** argv, int *i) {
     (*i)++;
     if(*i >= argc) { 
-        return -FLT_MAX;
+        return -FLT_MAX; // value missing
     }
     if(argv[*i][0] < '0' || argv[*i][0] > MAX_F_NUM + '0' || argv[*i][1] != 0) { 
-        return FLT_MIN; 
+        return FLT_MIN; // invalid value
     }
     return (float)(argv[*i][0] - '0');
 }
 
 void checkParam(float param, char argn) {
-    if(param == -FLT_MIN) {
+    if(param == -FLT_MAX) {
         printf("Parameter value missing: -%c\n", argn);
         INV_ARG_QUIT;
     } 
