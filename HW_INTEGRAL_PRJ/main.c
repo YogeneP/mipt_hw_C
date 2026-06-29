@@ -8,8 +8,8 @@
 #define EPSI_DEF 0.0001
 #define EPSR_DEF 0.0001
 #define MAX_F_NUM 4
-#define NEGATIVE_R_LIMIT -10
-#define POSITIVE_R_LIMIT 10
+#define A_DEF -10.0
+#define B_DEF 10.0
 #define GET_INTEGRAL_TASK !!(1 & task_flags)
 #define GET_INTERSECTION_TASK !!(2 & task_flags)
 #define GET_ITERATIONS_TASK !!(4 & task_flags)
@@ -50,7 +50,6 @@ float getIntersectionX(float(*f)(float), float(*g)(float), float a, float b, flo
 float getIntegral(float(*f)(float), float a, float b, float eps2);
 float ifnparse(int argc, char** argv, int *i);
 float fparse(int argc, char** argv, int *i);
-int parseParameters(int ac, char** av, int index, int parse_f2, params_t params);
 void checkParam(float param, char argn);
 void fswap(float* a, float* b);
 void swap(int* a, int* b);
@@ -72,12 +71,12 @@ int main(int argc, char** argv) {
     };
 
     unsigned int task_flags = 0; //
-    float epsi = EPSI_DEF;
-    float epsr = EPSR_DEF;
+    float epsi = 0;
+    float epsr = 0;
     float a = FLT_MAX;
     float b = FLT_MAX;
-    int f_num = 0;
-    int g_num = 0;
+    int f_num = __INT16_MAX__;
+    int g_num = __INT16_MAX__;
 
     while(i < argc) {
         if (argv[i][0] == '-') {
@@ -100,8 +99,8 @@ int main(int argc, char** argv) {
                     break;
                 case 'g':   // select second g(x) option
                     float gn = ifnparse(argc,argv,&i);
-                    checkParam(fn, 'g');
-                    g_num = fn;
+                    checkParam(gn, 'g');
+                    g_num = (int)gn;
                     break;
                 case 'p':   // print all intersection points of complex shape area calculation
                     SET_POINTS_TASK;
@@ -110,11 +109,15 @@ int main(int argc, char** argv) {
                     SET_ITERATIONS_TASK;
                     break;
                 case 'i':   // enable integral of f(x) on [a, b] range calculation
-                    checkParam(epsi, 'i');
+//**** CHECK epsi and epsr assignment - runs infinitely if specified*/
                     SET_INTEGRAL_TASK;
+                    epsi = fparse(argc,argv,&i);
+                    if(epsi == -FLT_MAX) { 
+                        epsi = FLT_MAX; 
+                    }
+                    i--;
                     break;
                 case 'r':   // enable f(x)^g(x) intersection on [a, b] range calculation
-                    checkParam(epsr, 'r');
                     SET_INTERSECTION_TASK;
                     break;
                 default:
@@ -123,24 +126,56 @@ int main(int argc, char** argv) {
             } 
         i++;
         }
-//        INV_ARG_QUIT;
     }
 
-    if(GET_INTEGRAL_TASK) {
-        printf("Calculating integral value of f(x)=%s in the range of [%.4f,%.4f]. Accuracy: %f \n", f_str[f_num], a < b ? a : b, a < b ? b : a, epsi);
+    if(a == FLT_MAX) {
+        printf("Limit a is not specified, proceeding with default a = %.4f\n", A_DEF);
+        a = A_DEF;
+    }
+    if(b == FLT_MAX) {
+        printf("Limit b is not specified, proceeding with default b = %.4f\n", B_DEF);
+        b = B_DEF;
+    }
+
+    if((f_num > MAX_F_NUM) && (g_num > MAX_F_NUM)) {
+        goto AREA;
+    }
+
+    if(GET_INTEGRAL_TASK && f_num <= MAX_F_NUM) {
+        printf("Calculating integral value of f(x)=%s in the range of [%.4g,%.4g].\n", f_str[f_num], a < b ? a : b, a < b ? b : a);
+        if(epsi == FLT_MAX) {
+            printf("Target accuracy is not specified, proceeding with default eps = %.4g\n", EPSI_DEF);
+            epsi = EPSI_DEF;
+        } else printf ("Target accuracy: %.4g \n", epsi);
         float res = getIntegral(f[f_num],a,b,epsi);
-        printf("Result: %f", res);
+        printf("Result: %.4g\n", res);
     }
 
     if(GET_INTERSECTION_TASK) {
-        printf("Searching of the intersection point of f(x)=%s and g(x)=%s in the range of [%.4f,%.4f]. Accuracy: %f \n", f_str[f_num], f_str[g_num], a, b, epsr);
-        float res = getIntersectionX(f[f_num],f[g_num],a,b,epsr);
-        printf("Result: %f", res);
+        if((f_num <= MAX_F_NUM) ^ (g_num <= MAX_F_NUM)) {
+            printf("To search an intersection point both of functions f(x) and g(x) must be specified.\n");
+            exit(1);
+        } 
+        if(f_num == g_num) {
+            printf("Can't find an intersection point of the function with itself (f(x)[%d] = g(x)[%d])\n",f_num,g_num);
+            exit(1);
+        }
+        
+        if(epsr == FLT_MAX) {
+            printf("Target accuracy is not specified, proceeding with default eps = %.4g\n", EPSR_DEF);
+            epsr = EPSI_DEF;
+        }
+        printf("Searching of the intersection point of f(x)=%s and g(x)=%s in the range of [%.4g,%.4g]. Accuracy: %.4g \n", f_str[f_num], f_str[g_num], a, b, epsr);
+        float resx = getIntersectionX(f[f_num],f[g_num],a,b,epsr);
+        printf("The point coordinates: (%.4g, %.4g)\n", resx, f[f_num](resx));
     }
 
+    AREA:
     /****  Shape area calculation ****/
+    if(GET_INTEGRAL_TASK || GET_INTERSECTION_TASK) exit(0);
     if(a > 0 || b < 0) {
-        printf("The calculation proceeds in two ranges [a;0] and [0;b]. \n There must be a < 0 and b > 0.");
+        printf("The calculation proceeds in two ranges [a;0] and [0;b].\nThere must be a<0 and b>0.");
+        exit(1);
     }
 
     r_points_size = R_INIT_SIZE;
@@ -172,15 +207,15 @@ int main(int argc, char** argv) {
             if (GET_INTERSECTION_TASK) {
                 printf("Intersection of ");
                 printf("f(x) = %s [%d]; g(x) = %s [%d] at", f_str[fi1], fi1, f_str[fi2], fi2);
-                printf("[%.2f, %.2f]: \n", (float)NEGATIVE_R_LIMIT, (float)0);
+                printf("[%.2f, %.2f]: \n", (float)A_DEF, (float)0);
             }
-            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, NEGATIVE_R_LIMIT, 0, epsr);
+            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, A_DEF, 0, epsr);
             if (GET_INTERSECTION_TASK) {
                 printf("Intersection of ");
                 printf("f(x) = %s [%d]; g(x) = %s [%d] at", f_str[fi1], fi1, f_str[fi2], fi2);
-                printf("[%.2f, %.2f]: \n", (float)0, (float)POSITIVE_R_LIMIT);
+                printf("[%.2f, %.2f]: \n", (float)0, (float)B_DEF);
             }
-            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, POSITIVE_R_LIMIT, epsr);
+            p_num += storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, B_DEF, epsr);
         }
     }
 
@@ -282,7 +317,7 @@ float fparse(int argc, char** argv, int *i) {
     char* f_end_ch = 0;
     float n = strtof(argv[*i], &f_end_ch);
     if(f_end_ch == argv[*i]) { 
-        return FLT_MIN; 
+        return FLT_MAX; 
     }
     return n;
 }
@@ -293,7 +328,7 @@ float ifnparse(int argc, char** argv, int *i) {
         return -FLT_MAX; // value missing
     }
     if(argv[*i][0] < '0' || argv[*i][0] > MAX_F_NUM + '0' || argv[*i][1] != 0) { 
-        return FLT_MIN; // invalid value
+        return FLT_MAX; // invalid value
     }
     return (float)(argv[*i][0] - '0');
 }
@@ -303,7 +338,7 @@ void checkParam(float param, char argn) {
         printf("Parameter value missing: -%c\n", argn);
         INV_ARG_QUIT;
     } 
-    if(param == FLT_MIN) {
+    if(param == FLT_MAX) {
         printf("Invalid parameter value format: -%c\n", argn);
         INV_ARG_QUIT;
     }
