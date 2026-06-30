@@ -38,7 +38,7 @@ task_flags bits assignment:
 2: print iteration steps
 3: print intersection points
 */
-unsigned short int task_flags;
+unsigned short int task_flags = 0;
 
 float f0(float x);
 float f1(float x);
@@ -70,13 +70,13 @@ int main(int argc, char** argv) {
         "x^3"
     };
 
-    unsigned int task_flags = 0; //
-    float epsi = 0;
-    float epsr = 0;
-    float a = FLT_MAX;
-    float b = FLT_MAX;
-    int f_num = __INT16_MAX__;
-    int g_num = __INT16_MAX__;
+    float epsi = 0; // integral calculation accuracy
+    float epsr = 0; // intersection point search accuracy
+    float eps = 0; // shape area calculation accuracy
+    float a = FLT_MAX; //left limit
+    float b = FLT_MAX; //right limit
+    int f_num = __INT16_MAX__; // first selected function number
+    int g_num = __INT16_MAX__; // second selected function number
 
     while(i < argc) {
         if (argv[i][0] == '-') {
@@ -118,6 +118,14 @@ int main(int argc, char** argv) {
                     break;
                 case 'r':   // enable f(x)^g(x) intersection on [a, b] range calculation
                     SET_INTERSECTION_TASK;
+                    epsr = fparse(argc,argv,&i);
+                    if(epsr == -FLT_MAX) { 
+                        epsr = FLT_MAX; 
+                    }
+                    break;
+                case 'e':   // set shape area calculation accuracy
+                    eps = fparse(argc,argv,&i);
+                    checkParam(eps, 'e');
                     break;
                 default:
                     printf("Invalid key: -%c", argv[i][1]);                    
@@ -209,23 +217,23 @@ int main(int argc, char** argv) {
             if (GET_ITERATIONS_TASK) {
                 printf("Intersection of ");
                 printf("f(x) = %s [%d]; g(x) = %s [%d] at ", f_str[fi1], fi1, f_str[fi2], fi2);
-                printf("[%.2f, %.2f]: ", (float)A_DEF, (float)0);
+                printf("[%.2f, %.2f]: ", (float)a, (float)0);
             }
-            inter_res = storeIntersectionPoint(r_points, p_num, f, fi1, fi2, A_DEF, 0, epsr);
+            inter_res = storeIntersectionPoint(r_points, p_num, f, fi1, fi2, a, 0, eps);
             if (inter_res) {
                 if(GET_ITERATIONS_TASK) { printf("found at x = %.4f\n", r_points[p_num].x); }
                 p_num += inter_res;
-            } else { printf("not found\n"); }
+            } else if(GET_ITERATIONS_TASK) printf("not found\n");
             if (GET_ITERATIONS_TASK) {
                 printf("Intersection of ");
                 printf("f(x) = %s [%d]; g(x) = %s [%d] at ", f_str[fi1], fi1, f_str[fi2], fi2);
-                printf("[%.2f, %.2f]: ", (float)0, (float)B_DEF);
+                printf("[%.2f, %.2f]: ", (float)0, (float)b);
             }
-            inter_res = storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, B_DEF, epsr);
+            inter_res = storeIntersectionPoint(r_points, p_num, f, fi1, fi2, 0, b, eps);
             if (inter_res) {
                 if(GET_ITERATIONS_TASK) { printf("found at x = %.4f\n", r_points[p_num].x); }
                 p_num += inter_res;
-            } else { printf("not found\n"); }
+            } else if(GET_ITERATIONS_TASK) printf("not found\n");
         }
     }
 
@@ -250,18 +258,18 @@ int main(int argc, char** argv) {
         #ifdef DEBUG 
             printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
         #endif
-        if(p_i > 0 && fi == r_points[p_i].f_num && gi == r_points[p_i].g_num) { //if top border crosses bottom border => end of shape
-            printf("End of shape reached with internal crossing detected.\n"); //means end of shape, but more intersection points left on the right o_O
+        if(fi == r_points[p_i].f_num && gi == r_points[p_i].g_num && p_i > 0) { //if top border crosses bottom border => end of shape
+            printf("End of shape reached with internal crossing detected on point %d.\n", p_i+1); //means end of shape, even if more intersection points left on the right o_O
             break;
         }
 
         float x_mid = (r_points[p_i].x + r_points[p_i+1].x)/2;
-        if(f[fi](x_mid) < f[gi](x_mid)) swap(&fi,&gi); //ensure f[fi]() is int hte top, f[gi]() - in the bottom  
+        if(f[fi](x_mid) < f[gi](x_mid)) swap(&fi,&gi); //ensure f[fi]() on top, f[gi]() - in the bottom  
         #ifdef DEBUG 
             printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
         #endif
-        float a1 = getIntegral(f[fi], r_points[p_i].x, r_points[p_i+1].x, epsi);
-        float a2 = getIntegral(f[gi], r_points[p_i].x, r_points[p_i+1].x, epsi);
+        float a1 = getIntegral(f[fi], r_points[p_i].x, r_points[p_i+1].x, eps);
+        float a2 = getIntegral(f[gi], r_points[p_i].x, r_points[p_i+1].x, eps);
         float a = a1-a2;
         area_total += a;
 
@@ -362,9 +370,9 @@ float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, f
     float fga = safe_f(f,a,1) - safe_f(g,a,1);
     float fgb = safe_f(f,b,-1) - safe_f(g,b,-1);
     if (((fga > .0) && (fgb > .0)) || ((fga < .0) && (fgb < .0))) {
-        if (GET_ITERATIONS_TASK) {
-            printf("No intersection or even intersections count in the range: \n f(a) - g(a) = %f - %f = %f\n f(b) - g(b) = %f - %f = %f\n", f(a), g(a), fga, f(b), g(b), fgb);
-        }
+//        if (GET_ITERATIONS_TASK) {
+//            printf("No or multiple intersections in the range: \n f(a) - g(a) = %f - %f = %f\n f(b) - g(b) = %f - %f = %f\n", f(a), g(a), fga, f(b), g(b), fgb);
+//       }
         return FLT_MAX;
     }
     if (fga == .0) return a;
@@ -467,15 +475,19 @@ int comp_points(const void* vp1, const void* vp2) {
     printf("\t\t\t2. f(x) = (x-2)^3 - 1\n");
     printf("\t\t\t3. f(x) = 3 / x\n\n");
     printf("Limitation of fuctions use: the number of the points of intersection between any pair\n of functions must be not more than one in every positive and negative ranges.\n\n");
-
+    printf("To proceed with area calculation omit any -i or -r tasks \n\n");
     printf("Additional options control:\n");
-    printf("\t-f: select first function to process with\n");
-    printf("\t-g: select second function to process with\n");
-    printf("\t-i: calculate integral f(x) on [a,b] range\n");
-    printf("\t-r: find intesection point of f(x) and g(x) located inside [a, b] range.\n");
+    printf("\t-f N: select first function f(x) to process\n");
+    printf("\t-g N: select second function g(x) to process\n");
+    printf("\t-i ACC: calculate integral f(x) on [a,b] range\n");
+    printf("\t\t f(x) must be selected with -f key\n");
+    printf("\t\t optional ACC value specifies target accuracy\n");
+    printf("\t-r ACC: find intesection point of f(x) and g(x) located inside [a, b] range.\n");
+    printf("\t\t f(x) and g(x) must be selected by -f and -g keys accordingly\n");
+    printf("\t\t optional ACC value specifies target accuracy\n");
     printf("\t-a: set left border of calculation range\n");
     printf("\t-b: set right border of calculation range\n");
-    printf("\t-n: on every calculation print the count of iterations passed\n");
+    printf("\t-n: on every calculation print the run of iterations\n");
 }
 
 void cleanup(void) {
