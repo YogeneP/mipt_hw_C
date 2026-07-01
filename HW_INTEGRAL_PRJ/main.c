@@ -5,6 +5,7 @@
 
 //#define DEBUG  
 #define INV_ARG_QUIT do { print_help(); exit(0); } while(0); 
+#define EPS_DEF 0.0001
 #define EPSI_DEF 0.0001
 #define EPSR_DEF 0.0001
 #define MAX_F_NUM 4
@@ -32,7 +33,7 @@ rpoint_t* r_points;
 size_t r_points_size;
 
 /*
-task_flags bits assignment:
+task_flags bits assignment (0 - LSB):
 0: single integral calculation
 1: single intersection point calculation
 2: print iteration steps
@@ -70,8 +71,8 @@ int main(int argc, char** argv) {
         "x^3"
     };
 
-    float epsi = 0; // integral calculation accuracy
-    float epsr = 0; // intersection point search accuracy
+    float epsi = FLT_MAX; // integral calculation accuracy
+    float epsr = FLT_MAX; // intersection point search accuracy
     float eps = 0; // shape area calculation accuracy
     float a = FLT_MAX; //left limit
     float b = FLT_MAX; //right limit
@@ -128,10 +129,13 @@ int main(int argc, char** argv) {
                     checkParam(eps, 'e');
                     break;
                 default:
-                    printf("Invalid key: -%c", argv[i][1]);                    
+                    printf("Invalid key: -%c \n", argv[i][1]);                    
                     INV_ARG_QUIT;
             } 
         i++;
+        } else {
+            printf("Invalid input\n");                    
+            INV_ARG_QUIT;
         }
     }
 
@@ -157,7 +161,7 @@ int main(int argc, char** argv) {
             } else printf ("Target accuracy: %.4g \n", epsi);
             float res = getIntegral(f[f_num],a,b,epsi);
             printf("Result: %.4g\n", res);
-        } else printf("No function f(x) selected for integral value calculation\n");
+        } else printf("No function f(x) selected for integral value calculation, use -f flag to specify one\n");
     }
 
     if(GET_INTERSECTION_TASK) {
@@ -176,13 +180,14 @@ int main(int argc, char** argv) {
         }
         printf("\nSearching of the intersection point of f(x)=%s and g(x)=%s in the range of [%.4g,%.4g]. Accuracy: %.4g \n", f_str[f_num], f_str[g_num], a, b, epsr);
         float resx = getIntersectionX(f[f_num],f[g_num],a,b,epsr);
-        printf("The point coordinates: (%.4g, %.4g)\n", resx, f[f_num](resx));
+        if(resx == FLT_MAX) printf("No or multiple (even count) intersection points in the specified range");
+        else printf("The point coordinates: (%.4g, %.4g)\n", resx, f[f_num](resx));
     }
 
     /****  Shape area calculation ****/
     if(GET_INTEGRAL_TASK || GET_INTERSECTION_TASK) exit(0);
     printf("\n");
-    if(a > 0 || b < 0) {
+    if(a >= 0 || b <= 0) {
         printf("The calculation proceeds in two ranges [a;0] and [0;b].\nThere must be a<0 and b>0.");
         exit(1);
     }
@@ -195,6 +200,10 @@ int main(int argc, char** argv) {
     // Fill the points array with intersection ponts (incl f(x) = 0)) in negative and positive ranges.
     // Next sort them
     // Proceed from left to right
+    if(eps <= 0) {
+        printf("Target accuracy is not specified, proceeding with default eps = %.4g\n", EPS_DEF);
+        eps = EPS_DEF;
+    }
     if (GET_ITERATIONS_TASK) printf("\nIntersections search:\n");
     for (int fi1 = 1; fi1 < MAX_F_NUM-1; fi1++) {
         for (int fi2 = fi1 + 1; fi2 < MAX_F_NUM; fi2++) {
@@ -250,25 +259,25 @@ int main(int argc, char** argv) {
     int fi = r_points[0].f_num; //must be top border of the shape segment 
     int gi = r_points[0].g_num; //must be bottom border of the shape segment
     for(int p_i = 0; p_i < p_num - 1; p_i++) {
-        if(GET_ITERATIONS_TASK) {
-            printf("Segment %d: \n", p_i);
-            printf("Top border: f(x)=%s; bottom border: g(x)=%s \n", f_str[fi], f_str[gi]);
-            printf("Limits: [%.2f; %.2f]\n", r_points[p_i].x, r_points[p_i+1].x);
-        }
         #ifdef DEBUG 
             printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
         #endif
         if(fi == r_points[p_i].f_num && gi == r_points[p_i].g_num && p_i > 0) { //if top border crosses bottom border => end of shape
-            printf("End of shape reached with internal crossing detected on point %d.\n", p_i+1); //means end of shape, even if more intersection points left on the right o_O
+            if(GET_ITERATIONS_TASK) printf("End of shape reached with internal crossing detected on point %d.\n", p_i+1); //means end of shape, even if more intersection points left on the right o_O
             break;
         }
-
+        if(GET_ITERATIONS_TASK) {
+            printf("Segment %d: \n", p_i);
+            printf("Limits: [%.2f; %.2f]\n", r_points[p_i].x, r_points[p_i+1].x);
+        }
         float x_mid = (r_points[p_i].x + r_points[p_i+1].x)/2;
         if(f[fi](x_mid) < f[gi](x_mid)) swap(&fi,&gi); //ensure f[fi]() on top, f[gi]() - in the bottom  
         #ifdef DEBUG 
             printf("p_i = %d; fi = %d; fi[p_i] = %d; gi = %d; gi[p_i] = %d\n", p_i, fi, r_points[p_i].f_num, gi, r_points[p_i].g_num);
         #endif
+        if(GET_ITERATIONS_TASK) printf("Top border: f(x)=%s \n", f_str[fi]);
         float a1 = getIntegral(f[fi], r_points[p_i].x, r_points[p_i+1].x, eps);
+        if(GET_ITERATIONS_TASK) printf("Bottom border: g(x)=%s \n", f_str[gi]);
         float a2 = getIntegral(f[gi], r_points[p_i].x, r_points[p_i+1].x, eps);
         float a = a1-a2;
         area_total += a;
@@ -364,6 +373,10 @@ void checkParam(float param, char argn) {
     }
 }
 
+float root(float (*f)(float), float (*g)(float), float a, float b, float eps1) { //getIntersectionX() alias
+    getIntersectionX(f, g, a, b, eps1);
+}
+
 float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, float eps1) {
     if(a == b) return FLT_MAX;
     if(b < a) fswap(&a,&b);
@@ -413,6 +426,10 @@ float getIntersectionX(float (*f)(float), float (*g)(float), float a, float b, f
         printf(" a = %f; b = %f; x = %f; fga = %f; fgb = %f; fgx = %f \n", a, b, x, fga, fgb, fgx);
     #endif
     return x;
+}
+
+float integral (float(*f)(float), float a, float b, float eps2) { //getIntegral alias
+    getIntegral(f, a, b, eps2);
 }
 
 float getIntegral(float(*f)(float), float a, float b, float eps2) {
@@ -481,13 +498,14 @@ int comp_points(const void* vp1, const void* vp2) {
     printf("\t-g N: select second function g(x) to process\n");
     printf("\t-i ACC: calculate integral f(x) on [a,b] range\n");
     printf("\t\t f(x) must be selected with -f key\n");
-    printf("\t\t optional ACC value specifies target accuracy\n");
+    printf("\t\t optional ACC value specifies target accuracy, default: %f\n", EPSI_DEF);
     printf("\t-r ACC: find intesection point of f(x) and g(x) located inside [a, b] range.\n");
     printf("\t\t f(x) and g(x) must be selected by -f and -g keys accordingly\n");
-    printf("\t\t optional ACC value specifies target accuracy\n");
-    printf("\t-a: set left border of calculation range\n");
-    printf("\t-b: set right border of calculation range\n");
-    printf("\t-n: on every calculation print the run of iterations\n");
+    printf("\t\t optional ACC value specifies target accuracy, default: %f\n", EPSR_DEF);
+    printf("\t-e ACC: specifies shape area calculation steps accuracy, optional key, default: %f\n", EPS_DEF);
+    printf("\t-a: set left border of calculation range, optional key, default: %f\n", A_DEF);
+    printf("\t-b: set right border of calculation range, optional key, default: %f\n", B_DEF);
+    printf("\t-n: print detailed info of how does the calculaton run\n");
 }
 
 void cleanup(void) {
